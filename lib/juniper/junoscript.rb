@@ -11,6 +11,7 @@ module Juniper
       [:keys, :logger, :password, :forward_agent].each do |key|
         ssh_opts[key] = options[key] if options.has_key?(key)
       end
+      @hostname = hostname
       @session = Net::SSH.start(hostname, username, options = ssh_opts)
       @logger = @session.logger
     end
@@ -20,31 +21,36 @@ module Juniper
     end
 
     def exec(xml)
-      buffer = Net::SSH::Buffer.new
-      @session.open_channel do |channel|
-        channel.exec("junoscript") do |ch, success|
-          if success
-            if block_given?
-              yield channel
-            else
-              # Construct XML document
-              doc = Document.new(xml.to_s)
-              doc << XMLDecl.new
+      begin      
+        buffer = Net::SSH::Buffer.new
+        @session.open_channel do |channel|
+          channel.exec("junoscript") do |ch, success|
+            if success
+              if block_given?
+                yield channel
+              else
+                # Construct XML document
+                doc = Document.new(xml.to_s)
+                doc << XMLDecl.new
 
-              # Send to JunOS device
-              @logger.debug "sending data: #{doc.to_s}"
-              channel.send_data(doc.to_s)
-              channel.on_data {|ch, data| buffer.append(data)}
-              channel.on_extended_data {|ch, type, data| @logger.warn "Extended data (type #{type}) received: #{data}"}
+                # Send to JunOS device
+                @logger.debug "sending data: #{doc.to_s}"
+                channel.send_data(doc.to_s)
+                channel.on_data {|ch, data| buffer.append(data)}
+                channel.on_extended_data {|ch, type, data| @logger.warn "Extended data (type #{type}) received: #{data}"}
+              end
+            else
+              channel.close
+              return nil
             end
-          else
-            channel.close
-            return nil
           end
         end
+        @session.loop
+        buffer.read
+      rescue
+        @logger.debug "failed to open channel: #{@hostname}"
+        return nil
       end
-      @session.loop
-      buffer.read
     end
 
     def junoscript(elements)
