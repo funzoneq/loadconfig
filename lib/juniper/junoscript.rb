@@ -11,6 +11,9 @@ module Juniper
       [:keys, :logger, :password, :forward_agent].each do |key|
         ssh_opts[key] = options[key] if options.has_key?(key)
       end
+      ssh_opts[:auth_methods] = [ 'password' ]
+      ssh_opts[:number_of_password_prompts] = 0
+
       @hostname = hostname
       @session = Net::SSH.start(hostname, username, options = ssh_opts)
       @logger = @session.logger
